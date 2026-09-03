@@ -16,7 +16,19 @@ const cryptoKey = await crypto.subtle.importKey(
   ["verify"],
 );
 
+// 1. Define CORS headers
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req) => {
+  // 2. Handle the preflight request for CORS
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     // ---- 1. Auth ----
     const authHeader = req.headers.get("Authorization") || "";
@@ -28,7 +40,10 @@ Deno.serve(async (req) => {
     } catch {
       return new Response(
         JSON.stringify({ error: "Invalid or expired session token" }),
-        { status: 401 },
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -42,6 +57,7 @@ Deno.serve(async (req) => {
     if (!trip_id || !uuidPattern.test(trip_id)) {
       return new Response(JSON.stringify({ error: "Invalid trip_id format" }), {
         status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -55,12 +71,16 @@ Deno.serve(async (req) => {
     if (tripError || !trip) {
       return new Response(JSON.stringify({ error: "Trip not found" }), {
         status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     if (trip.status !== "scheduled" && trip.status !== "in_progress") {
       return new Response(
         JSON.stringify({ error: "This trip is not available for booking" }),
-        { status: 400 },
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -109,13 +129,19 @@ Deno.serve(async (req) => {
         payment_status,
         mock_payment: true,
       }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   } catch (err) {
     console.error(err);
     return new Response(
       JSON.stringify({ error: "Something went wrong. Please try again." }),
-      { status: 500 },
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });
