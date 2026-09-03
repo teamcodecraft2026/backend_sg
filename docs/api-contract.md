@@ -200,6 +200,55 @@ Errors:
 
 A ticket can only ever be scanned successfully once. Design the conductor UI around this — show a clear success/fail state per scan, don't allow retry-looping on the same ticket.
 
+## 6. Admin Stats
+
+`GET /admin-stats?range=all`
+
+**Auth header:** an **admin-role** user's session token
+
+**Query param `range`:** `today` | `week` | `all` (defaults to `all` if omitted)
+
+**Success response (200):**
+
+```json
+{
+  "success": true,
+  "range": "all",
+  "total_revenue": 25,
+  "pink_card_discount_lost": 30,
+  "revenue_by_route": [
+    {
+      "route_name": "Route 45",
+      "revenue": 0,
+      "tickets_sold": 1,
+      "free_tickets": 1
+    },
+    {
+      "route_name": "Route 12",
+      "revenue": 25,
+      "tickets_sold": 1,
+      "free_tickets": 0
+    }
+  ],
+  "trip_count": 2,
+  "estimated_cost_per_trip": 800,
+  "estimated_cost": 1600,
+  "net_estimate": -1575,
+  "cost_note": "estimated_cost is a hardcoded flat rate per trip — no real fuel/wage data source yet"
+}
+```
+
+**Field notes:**
+
+- `pink_card_discount_lost` = sum of `base_fare` for every route where a ticket was issued free (fare_charged = 0)
+- `estimated_cost_per_trip` is a hardcoded flat rate (₹800), not based on real fuel/wage data — swap this out if real cost data becomes available
+- `net_estimate` = total_revenue − estimated_cost (can be negative, that's expected with free Pink Card rides)
+
+**Errors:**
+
+- `401` — missing/invalid/expired token
+- `403` — token valid but role isn't `admin`
+
 Not yet available (coming later)
 Admin dashboard endpoints (revenue/cost/route stats) — Days 5–6
 Real payment gateway — stays mocked for the demo per team decision
@@ -211,3 +260,4 @@ Endpoint Auth header value
 /check-pink-card user session token
 /book-ticket user session token
 /scan-ticket conductor session token
+| /admin-stats | admin session token |
