@@ -16,14 +16,29 @@ const cryptoKey = await crypto.subtle.importKey(
   ["sign"],
 );
 
+// 1. Define CORS headers
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req) => {
+  // 2. Handle the preflight request for CORS
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     const { phone, otp_code } = await req.json();
 
     if (!phone || !otp_code) {
       return new Response(
         JSON.stringify({ error: "phone and otp_code are required" }),
-        { status: 400 },
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -40,7 +55,10 @@ Deno.serve(async (req) => {
     if (otpError || !otpRow) {
       return new Response(
         JSON.stringify({ error: "OTP expired or not found" }),
-        { status: 400 },
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -49,7 +67,10 @@ Deno.serve(async (req) => {
         JSON.stringify({
           error: "Too many incorrect attempts. Request a new OTP.",
         }),
-        { status: 429 },
+        {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -60,6 +81,7 @@ Deno.serve(async (req) => {
         .eq("id", otpRow.id);
       return new Response(JSON.stringify({ error: "Invalid OTP" }), {
         status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -100,13 +122,16 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ success: true, token, user }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
     console.error(err);
     return new Response(
       JSON.stringify({ error: "Something went wrong. Please try again." }),
-      { status: 500 },
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });
