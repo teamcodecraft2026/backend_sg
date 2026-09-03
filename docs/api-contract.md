@@ -1,211 +1,232 @@
-Pink Transit — Backend API Contract (v1)
+````markdown
+# Pink Transit — API Contract (v2)
 
-Base URL: https://welccusfyovxgpfplnlj.supabase.co/functions/v1
+**Base URL (Backend / Supabase Edge Functions):** `https://welccusfyovxgpfplnlj.supabase.co/functions/v1`
+**Base URL (AI/ML service):** _See Section 10 — hosted separately, docs at `/docs` on that service._
 
-All requests require these headers:
+**Status:** Auth, Eligibility, Booking, Scanning, Admin Stats, Search, and Ticket History are all built, tested, hardened, and live. Payments and SMS are intentionally mocked for the demo (see Section 9). AI/ML endpoints exist but their exact request/response shapes are pending confirmation from the AI/ML team.
 
-Authorization: Bearer <anon_key OR user session token — see per-endpoint notes>
+> **Note to team:** If you're not sure which endpoint to call for something, or what an error means — it's in this file. Ask backend before assuming.
+
+---
+
+## How Auth Works (Read This First)
+
+There are three kinds of "auth" used across these endpoints:
+
+1. **Anon key:** A fixed public key, used only for `send-otp` and `verify-otp` (before a user has a session).
+2. **User session token:** The JWT returned from `verify-otp`. Send it as `Authorization: Bearer <token>` on every endpoint that needs to know who's calling. Valid for 7 days.
+3. **Role-restricted token:** Same session token, but the endpoint checks the `role` field inside it (`passenger`, `conductor`, `admin`). Wrong role returns a `403`.
+
+**All requests need these headers:**
+
+```http
+Authorization: Bearer <anon_key OR session_token>
 Content-Type: application/json
+```
+````
 
-Status: Auth, Eligibility, Booking, and Scanning are built and tested end-to-end. Payments are mocked (always succeed instantly). OTP SMS is mocked (OTP code is returned directly in the API response, not sent via SMS). Admin endpoints not yet built.
+---
 
-1. Send OTP
+## Standard Error Format
 
-POST /send-otp
+Every error from every endpoint below follows this shape:
 
-Auth header: use the Supabase anon public key
+```json
+{ "error": "human-readable message" }
+```
 
-Request body:
+**Common status codes:**
 
-json
+| Code    | Meaning                                                             |
+| ------- | ------------------------------------------------------------------- |
+| **400** | Bad request — missing field, or invalid format (bad phone/PAN/UUID) |
+| **401** | Missing, invalid, or expired session token                          |
+| **403** | Token is valid, but the role doesn't have access to this endpoint   |
+| **404** | Resource not found (e.g., trip doesn't exist)                       |
+| **429** | Too many attempts (OTP brute-force protection)                      |
+| **500** | Unexpected server error — ask backend to check logs                 |
+
+---
+
+## 1. Send OTP
+
+`POST /send-otp`
+**Auth header:** Anon key
+**Request body:**
+
+```json
 { "phone": "9876543210" }
+```
 
-Success response (200):
+_Validation:_ Must be a 10-digit number starting with 6–9 (Indian mobile format). Anything else → 400. Requesting a new OTP invalidates any previous unused OTP for that phone number.
 
-json
+**Success response (200):**
+
+```json
 {
-"success": true,
-"mock_sms": true,
-"message": "OTP generated for 9876543210 (mocked — real SMS integration pending)",
-"otp_code": "668745"
+  "success": true,
+  "mock_sms": true,
+  "message": "OTP generated for 9876543210 (mocked — real SMS integration pending)",
+  "otp_code": "668745"
 }
+```
 
-otp_code is only present because SMS is mocked. In production this field will be removed and the code will only exist server-side.
+_(Note: `otp_code` is only present because SMS is mocked. In production this field is removed.)_
 
-Error (400): missing phone
+---
 
-2. Verify OTP
+## 2. Verify OTP
 
-POST /verify-otp
+`POST /verify-otp`
+**Auth header:** Anon key
+**Request body:**
 
-Auth header: use the Supabase anon public key
-
-Request body:
-
-json
+```json
 { "phone": "9876543210", "otp_code": "668745" }
+```
 
-Success response (200):
+_Brute-force protection:_ Max 5 wrong OTP guesses per code. The 6th wrong attempt returns 429.
 
-json
+**Success response (200):**
+
+```json
 {
-"success": true,
-"token": "eyJhbGciOi...(JWT, valid 7 days)",
-"user": {
-"id": "9bf24467-f022-43b9-a608-91e2136783ef",
-"phone": "9876543210",
-"name": null,
-"role": "passenger",
-"created_at": "2026-08-30T18:00:00Z"
+  "success": true,
+  "token": "eyJhbGciOi...(JWT, valid 7 days)",
+  "user": {
+    "id": "9bf24467-f022-43b9-a608-91e2136783ef",
+    "phone": "9876543210",
+    "name": null,
+    "role": "passenger",
+    "created_at": "2026-08-30T18:00:00Z"
+  }
 }
-}
+```
 
-On first verify for a new phone number, a user is auto-created with role: "passenger".
+_(Note: Save the `token`. On first verify, a user is auto-created with role: `passenger`. Admin/Conductor roles are set manually in the DB for testing)._
 
-Save token. Every endpoint below requires it as:
+---
 
-Authorization: Bearer <token>
+## 3. Check Pink Card Eligibility
 
-Errors:
+`POST /check-pink-card`
+**Auth header:** User session token
+**Request body:**
 
-400 — OTP expired or not found
-401 — Invalid OTP code 3. Check Pink Card Eligibility
-
-POST /check-pink-card
-
-Auth header: the user's session token (from verify-otp)
-
-Request body:
-
-json
+```json
 { "pan": "ABCDE1234F" }
+```
 
-Success response (200) — eligible example:
+_Validation:_ Must match PAN format (5 letters, 4 digits, 1 letter). Invalid format → 400.
 
-json
+**Success response (200):** _(This exact shape is locked; AI/ML chatbot depends on it)_
+
+```json
 {
-"success": true,
-"application_id": "a15fc07c-a3a7-40cd-a7d1-da2ba1a30a5e",
-"pan": "ABCDE1234F",
-"eligible": true,
-"gender": "F",
-"annual_income": 120000,
-"threshold": 250000,
-"gap": -130000,
-"reason_code": "ELIGIBLE_INCOME_GENDER",
-"reason_message": "Eligible: income is ₹1,30,000 below the threshold."
+  "success": true,
+  "application_id": "a15fc07c-a3a7-40cd-a7d1-da2ba1a30a5e",
+  "pan": "ABCDE1234F",
+  "eligible": true,
+  "gender": "F",
+  "annual_income": 120000,
+  "threshold": 250000,
+  "gap": -130000,
+  "reason_code": "ELIGIBLE_INCOME_GENDER",
+  "reason_message": "Eligible: income is ₹1,30,000 below the threshold."
 }
+```
 
-Not eligible — possible reason_code values:
+**`reason_code` Reference (Safe to pattern-match):**
 
-reason_code Meaning
-ELIGIBLE_INCOME_GENDER Eligible: female + income under ₹2,50,000
-INELIGIBLE_GENDER Scheme is female-only
-INELIGIBLE_INCOME_HIGH Female, but income exceeds ₹2,50,000
-INELIGIBLE_NO_RECORD PAN not found in the income database
+| Code                     | Meaning                               |
+| ------------------------ | ------------------------------------- |
+| `ELIGIBLE_INCOME_GENDER` | Eligible: female + income ≤ ₹2,50,000 |
+| `INELIGIBLE_GENDER`      | Scheme is female-only                 |
+| `INELIGIBLE_INCOME_HIGH` | Female, but income exceeds ₹2,50,000  |
+| `INELIGIBLE_NO_RECORD`   | PAN not found in the database         |
 
-When not eligible, gender/annual_income/gap may be null (e.g. no-record case).
+---
 
-gap meaning: negative = income is below threshold (good, this much room to spare). Positive = income exceeds threshold by this much.
+## 4. Book Ticket
 
-Errors:
+`POST /book-ticket`
+**Auth header:** User session token
+**Request body:**
 
-400 — missing pan
-401 — missing/invalid/expired token
-
-This same response shape is stored server-side and read by the AI chatbot to explain rejections — do not expect this shape to change.
-
-4. Book Ticket
-
-POST /book-ticket
-
-Auth header: the user's session token
-
-Request body:
-
-json
+```json
 { "trip_id": "e0a6b4ed-175d-4402-8c61-9ae01d521bc8" }
+```
 
-Success response (200):
+_Validation:_ `trip_id` must be a valid UUID.
 
-json
+**Success response (200):**
+
+```json
 {
-"success": true,
-"ticket": {
-"id": "4825c025-6426-40a7-a31d-6a0001d0f632",
-"user_id": "9bf24467-f022-43b9-a608-91e2136783ef",
-"trip_id": "e0a6b4ed-175d-4402-8c61-9ae01d521bc8",
-"fare_charged": 0,
-"qr_payload": "4825c025-6426-40a7-a31d-6a0001d0f632",
-"status": "issued",
-"issued_at": "2026-08-30T20:24:53.624401+00:00",
-"scanned_at": null
-},
-"pink_card_applied": true,
-"payment_status": "success",
-"mock_payment": true
+  "success": true,
+  "ticket": {
+    "id": "4825c025-6426-40a7-a31d-6a0001d0f632",
+    "user_id": "9bf24467-f022-43b9-a608-91e2136783ef",
+    "trip_id": "e0a6b4ed-175d-4402-8c61-9ae01d521bc8",
+    "fare_charged": 0,
+    "qr_payload": "4825c025-6426-40a7-a31d-6a0001d0f632",
+    "status": "issued",
+    "issued_at": "2026-08-30T20:24:53.624401+00:00",
+    "scanned_at": null
+  },
+  "pink_card_applied": true,
+  "payment_status": "success",
+  "mock_payment": true
 }
+```
 
-Fare logic: if the user's most recent Pink Card check was eligible: true, fare_charged is 0. Otherwise, fare_charged equals the route's base_fare. A user must call check-pink-card at least once before booking to get the discount — there's no automatic re-check during booking.
+_Fare logic:_ If the user's most recent `check-pink-card` was `eligible: true`, fare is 0. Otherwise, base fare is charged.
+_QR Payload:_ The `qr_payload` is just the ticket's UUID. Render this as a QR code on the frontend. The scanner looks up everything else server-side.
 
-qr_payload is just the ticket's UUID — render this string as a QR code on the frontend. The scanner looks up all other details server-side; nothing else needs to be encoded in the QR.
+---
 
-Errors:
+## 5. Scan Ticket (Conductor Only)
 
-400 — missing trip_id, or trip not open for booking
-401 — missing/invalid/expired token
-404 — trip not found 5. Scan Ticket (Conductor only)
+`POST /scan-ticket`
+**Auth header:** Conductor session token
+**Request body:**
 
-POST /scan-ticket
-
-Auth header: a conductor-role user's session token (role: "conductor" — regular passenger tokens are rejected)
-
-Request body:
-
-json
-{ "ticket_id": "4825c025-6426-40a7-a31d-6a0001d0f632" }
-
-ticket_id is exactly what's decoded from the ticket's QR code (the qr_payload value from booking).
-
-Optional: pass trip_id too if you want to enforce the ticket matches the trip currently being boarded:
-
-json
-{ "ticket_id": "...", "trip_id": "..." }
-
-Success response (200) — valid ticket:
-
-json
+```json
 {
-"success": true,
-"scan_result": "valid",
-"valid": true,
-"reason": "Boarding approved",
-"ticket_id": "4825c025-6426-40a7-a31d-6a0001d0f632",
-"fare_charged": 0
+  "ticket_id": "4825c025-6426-40a7-a31d-6a0001d0f632",
+  "trip_id": "optional-trip-uuid"
 }
+```
 
-scan_result possible values:
+_Validation:_ `ticket_id` must be a valid UUID.
 
-scan_result valid Meaning
-valid true Ticket accepted, marked as scanned, boarding approved
-already_used false Ticket was already scanned once — reject
-expired false Ticket status is expired or cancelled
-invalid false Ticket not found, or doesn't match the given trip_id
+**Success response (200):**
 
-Errors:
+```json
+{
+  "success": true,
+  "scan_result": "valid",
+  "valid": true,
+  "reason": "Boarding approved",
+  "ticket_id": "4825c025-6426-40a7-a31d-6a0001d0f632",
+  "fare_charged": 0
+}
+```
 
-400 — missing ticket_id
-401 — missing/invalid/expired token
-403 — token is valid but role isn't conductor
+**`scan_result` values:**
 
-A ticket can only ever be scanned successfully once. Design the conductor UI around this — show a clear success/fail state per scan, don't allow retry-looping on the same ticket.
+- `valid`: Ticket accepted, marked as scanned.
+- `already_used`: Fraud prevention—ticket was already scanned once.
+- `expired`: Ticket status is expired or cancelled.
+- `invalid`: Ticket not found, or doesn't match the boarded `trip_id`.
+
+---
 
 ## 6. Admin Stats
 
 `GET /admin-stats?range=all`
-
-**Auth header:** an **admin-role** user's session token
-
+**Auth header:** Admin session token
 **Query param `range`:** `today` | `week` | `all` (defaults to `all` if omitted)
 
 **Success response (200):**
@@ -238,24 +259,13 @@ A ticket can only ever be scanned successfully once. Design the conductor UI aro
 }
 ```
 
-**Field notes:**
-
-- `pink_card_discount_lost` = sum of `base_fare` for every route where a ticket was issued free (fare_charged = 0)
-- `estimated_cost_per_trip` is a hardcoded flat rate (₹800), not based on real fuel/wage data — swap this out if real cost data becomes available
-- `net_estimate` = total_revenue − estimated_cost (can be negative, that's expected with free Pink Card rides)
-
-**Errors:**
-
-- `401` — missing/invalid/expired token
-- `403` — token valid but role isn't `admin`
+---
 
 ## 7. Search Trips
 
 `GET /search-trips?origin=Howrah&destination=Salt+Lake`
-
-**Auth header:** none required — public endpoint
-
-**Query params (both optional):** `origin`, `destination` — case-insensitive partial match
+**Auth header:** None required (Public)
+**Query params (optional):** `origin`, `destination` (Case-insensitive partial match)
 
 **Success response (200):**
 
@@ -277,15 +287,12 @@ A ticket can only ever be scanned successfully once. Design the conductor UI aro
 }
 ```
 
-Only trips with `status: "scheduled"` are returned.
-
 ---
 
 ## 8. Ticket History
 
 `GET /ticket-history`
-
-**Auth header:** the **user's session token**
+**Auth header:** User session token
 
 **Success response (200):**
 
@@ -310,19 +317,59 @@ Only trips with `status: "scheduled"` are returned.
 }
 ```
 
-Sorted most recent first. `status` reflects the ticket's current state: `issued`, `scanned`, `expired`, or `cancelled`.
+---
 
-Not yet available (coming later)
-Admin dashboard endpoints (revenue/cost/route stats) — Days 5–6
-Real payment gateway — stays mocked for the demo per team decision
-Real SMS delivery — stays mocked for the demo per team decision
-Quick reference — auth header cheat sheet
-Endpoint Auth header value
-/send-otp anon key
-/verify-otp anon key
-/check-pink-card user session token
-/book-ticket user session token
-/scan-ticket conductor session token
-| /admin-stats | admin session token |
-| /search-trips | none (public) |
-| /ticket-history | user session token |
+## 9. What's Mocked (and why)
+
+| Feature                   | Status    | Detail                                              |
+| ------------------------- | --------- | --------------------------------------------------- |
+| **Pink Card Eligibility** | ✅ Real   | Gender + income logic, reason codes                 |
+| **Pink Card Income Data** | ⚠️ Mocked | Hardcoded DB table instead of government PAN API    |
+| **QR Generation/Scan**    | ✅ Real   | UUID-based QR, real validation and reuse prevention |
+| **Payment Gateway**       | ⚠️ Mocked | Instantly succeeds, no Razorpay integration         |
+| **OTP Delivery**          | ⚠️ Mocked | Returned in API response instead of SMS             |
+| **OTP Verification**      | ✅ Real   | Fully real logic with brute-force rate limits       |
+| **Admin Revenue**         | ✅ Real   | Calculated from actual ticket data                  |
+| **Admin Cost Figures**    | ⚠️ Mocked | Flat ₹800/trip estimate; no live fuel data          |
+
+---
+
+## 10. AI/ML Service Endpoints
+
+_(Hosted separately from the backend above — exact formats pending team confirmation)_
+
+| Endpoint                    | Purpose                                        | Status  |
+| --------------------------- | ---------------------------------------------- | ------- |
+| `POST /chatbot`             | Explains Pink Card rejection in plain language | Pending |
+| `POST /predict-demand`      | Route-wise passenger demand forecast           | Pending |
+| `GET /fleet-recommendation` | Suggests bus allocation per route              | Pending |
+
+> **Note for `/chatbot`:** It is built to consume the exact `check-pink-card` response shape from Section 3. If that shape ever changes, backend must notify the AI/ML team first.
+
+---
+
+## Quick Reference — Auth Header Cheat Sheet
+
+| Endpoint                | Auth Required           |
+| ----------------------- | ----------------------- |
+| `POST /send-otp`        | Anon Key                |
+| `POST /verify-otp`      | Anon Key                |
+| `POST /check-pink-card` | User session token      |
+| `POST /book-ticket`     | User session token      |
+| `POST /scan-ticket`     | Conductor session token |
+| `GET /admin-stats`      | Admin session token     |
+| `GET /search-trips`     | None (Public)           |
+| `GET /ticket-history`   | User session token      |
+| `POST /chatbot`         | _See AI/ML Team Docs_   |
+
+---
+
+## Known Gaps (Out of Scope for Demo)
+
+- Aadhaar OCR / face-match / Resident Certificate uploads.
+- Multi-state income thresholds (currently fixed at ₹2,50,000 everywhere).
+- Card renewal workflows and expiry alerts.
+
+```
+
+```
