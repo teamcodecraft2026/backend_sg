@@ -18,7 +18,19 @@ const cryptoKey = await crypto.subtle.importKey(
 
 const THRESHOLD = 250000;
 
+// 1. Define CORS headers
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req) => {
+  // 2. Handle the preflight request for CORS
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     // ---- 1. Authenticate the caller via our own JWT (from verify-otp) ----
     const authHeader = req.headers.get("Authorization") || "";
@@ -30,7 +42,10 @@ Deno.serve(async (req) => {
     } catch {
       return new Response(
         JSON.stringify({ error: "Invalid or expired session token" }),
-        { status: 401 },
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -48,7 +63,10 @@ Deno.serve(async (req) => {
         JSON.stringify({
           error: "Invalid PAN format. Expected format: ABCDE1234F",
         }),
-        { status: 400 },
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -134,14 +152,17 @@ Deno.serve(async (req) => {
       JSON.stringify({ success: true, application_id: savedApp.id, ...result }),
       {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );
   } catch (err) {
     console.error(err);
     return new Response(
       JSON.stringify({ error: "Something went wrong. Please try again." }),
-      { status: 500 },
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });
