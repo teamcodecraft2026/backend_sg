@@ -16,7 +16,19 @@ const cryptoKey = await crypto.subtle.importKey(
   ["verify"],
 );
 
+// 1. Define CORS headers
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req) => {
+  // 2. Handle the preflight request for CORS
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     const authHeader = req.headers.get("Authorization") || "";
     const userToken = authHeader.replace("Bearer ", "");
@@ -27,7 +39,10 @@ Deno.serve(async (req) => {
     } catch {
       return new Response(
         JSON.stringify({ error: "Invalid or expired session token" }),
-        { status: 401 },
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -64,14 +79,17 @@ Deno.serve(async (req) => {
       }),
       {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );
   } catch (err) {
     console.error(err);
     return new Response(
       JSON.stringify({ error: "Something went wrong. Please try again." }),
-      { status: 500 },
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });
