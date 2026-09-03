@@ -249,6 +249,69 @@ A ticket can only ever be scanned successfully once. Design the conductor UI aro
 - `401` — missing/invalid/expired token
 - `403` — token valid but role isn't `admin`
 
+## 7. Search Trips
+
+`GET /search-trips?origin=Howrah&destination=Salt+Lake`
+
+**Auth header:** none required — public endpoint
+
+**Query params (both optional):** `origin`, `destination` — case-insensitive partial match
+
+**Success response (200):**
+
+```json
+{
+  "success": true,
+  "count": 1,
+  "trips": [
+    {
+      "trip_id": "e0a6b4ed-175d-4402-8c61-9ae01d521bc8",
+      "bus_number": "WB-01-1234",
+      "departure_time": "2026-08-30T20:42:11.525043+00:00",
+      "route_name": "Route 12",
+      "origin": "Howrah",
+      "destination": "Salt Lake",
+      "base_fare": 25
+    }
+  ]
+}
+```
+
+Only trips with `status: "scheduled"` are returned.
+
+---
+
+## 8. Ticket History
+
+`GET /ticket-history`
+
+**Auth header:** the **user's session token**
+
+**Success response (200):**
+
+```json
+{
+  "success": true,
+  "count": 2,
+  "tickets": [
+    {
+      "ticket_id": "4825c025-6426-40a7-a31d-6a0001d0f632",
+      "route_name": "Route 45",
+      "origin": "Esplanade",
+      "destination": "Garia",
+      "bus_number": "WB-02-5678",
+      "departure_time": "2026-08-30T21:00:00+00:00",
+      "fare_charged": 0,
+      "status": "scanned",
+      "issued_at": "2026-08-30T20:24:53.624401+00:00",
+      "scanned_at": "2026-08-30T20:48:43.955+00:00"
+    }
+  ]
+}
+```
+
+Sorted most recent first. `status` reflects the ticket's current state: `issued`, `scanned`, `expired`, or `cancelled`.
+
 Not yet available (coming later)
 Admin dashboard endpoints (revenue/cost/route stats) — Days 5–6
 Real payment gateway — stays mocked for the demo per team decision
@@ -261,3 +324,5 @@ Endpoint Auth header value
 /book-ticket user session token
 /scan-ticket conductor session token
 | /admin-stats | admin session token |
+| /search-trips | none (public) |
+| /ticket-history | user session token |
