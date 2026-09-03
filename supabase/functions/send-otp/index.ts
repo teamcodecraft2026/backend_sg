@@ -5,7 +5,19 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// 1. Define CORS headers
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req) => {
+  // 2. Handle the preflight request for CORS
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     const { phone } = await req.json();
 
@@ -15,7 +27,11 @@ Deno.serve(async (req) => {
           error:
             "Invalid phone number. Must be a 10-digit Indian mobile number.",
         }),
-        { status: 400 },
+        // 3a. Attach CORS headers to error response
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -46,13 +62,21 @@ Deno.serve(async (req) => {
         message: `OTP generated for ${phone} (mocked — real SMS integration pending)`,
         otp_code, // remove this field when swapping in a real SMS provider
       }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
+      // 3b. Attach CORS headers to success response
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   } catch (err) {
     console.error(err);
     return new Response(
       JSON.stringify({ error: "Something went wrong. Please try again." }),
-      { status: 500 },
+      // 3c. Attach CORS headers to catch response
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });
