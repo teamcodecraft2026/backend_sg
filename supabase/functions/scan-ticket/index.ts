@@ -76,10 +76,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ---- 4. Look up the ticket ----
+    // ---- 4. Look up the ticket (NOW WITH JOINS FOR USER & ROUTE INFO) ----
     const { data: ticket, error: ticketError } = await supabase
       .from("tickets")
-      .select("*")
+      .select(
+        `
+        *,
+        users ( name, phone ),
+        trips (
+          routes ( route_name, origin, destination )
+        )
+      `,
+      )
       .eq("id", ticket_id)
       .single();
 
@@ -114,12 +122,25 @@ Deno.serve(async (req) => {
 
       if (updateError) throw updateError;
 
+      // Extract the nested data safely
+      const passenger_name = ticket.users?.name || "Passenger";
+      const passenger_phone = ticket.users?.phone || "Unknown Phone";
+      const route_name = ticket.trips?.routes?.route_name || "Unknown Route";
+      const origin = ticket.trips?.routes?.origin || "Unknown Origin";
+      const destination =
+        ticket.trips?.routes?.destination || "Unknown Destination";
+
       scan_result = "valid";
       responseBody = {
         valid: true,
         reason: "Boarding approved",
         ticket_id: ticket.id,
         fare_charged: ticket.fare_charged,
+        passenger_name,
+        passenger_phone,
+        route_name,
+        origin,
+        destination,
       };
     }
 
