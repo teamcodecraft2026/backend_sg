@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
       .limit(1)
       .single();
 
-    const isEligible = latestApp?.eligible === true;
+    const isEligible = latestApp?.status === "eligible";
     const fare_charged = isEligible ? 0 : base_fare;
 
     // ---- 5. MOCKED PAYMENT STEP ----
