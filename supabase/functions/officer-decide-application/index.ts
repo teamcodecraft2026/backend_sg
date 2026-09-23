@@ -6,8 +6,9 @@
 // body: {
 //   application_id: string,
 //   decision: "approve" | "deny",
-//   manual_income?: number,   // required to approve when source === "manual"
-//   manual_reason?: string,   // required for manual-review applications
+//   manual_gender?: "Male" | "Female",  // required for manual-review applications
+//   manual_income?: number,              // required for manual-review applications
+//   manual_reason?: string,              // required for manual-review applications
 // }
 //
 // Server-side enforced rule:
@@ -85,6 +86,9 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const application_id = (body.application_id ?? "").toString();
     const decision = body.decision; // "approve" | "deny"
+    const manual_gender = body.manual_gender
+      ? String(body.manual_gender).trim()
+      : null;
     const manual_income =
       body.manual_income != null ? Number(body.manual_income) : null;
     const manual_reason = body.manual_reason
@@ -152,8 +156,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ---- Manual-review applications: require income + reason to decide ----
+    // ---- Manual-review applications: require gender + income + reason ----
     if (app.source === "manual") {
+      if (!manual_gender || !["Male", "Female"].includes(manual_gender)) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "manual_gender (Male or Female) is required for manually-reviewed applications",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
       if (manual_income == null || Number.isNaN(manual_income)) {
         return new Response(
           JSON.stringify({
@@ -188,6 +204,7 @@ Deno.serve(async (req) => {
       decided_at: new Date().toISOString(),
     };
     if (app.source === "manual") {
+      updatePayload.manual_gender = manual_gender;
       updatePayload.manual_income = manual_income;
       updatePayload.manual_reason = manual_reason;
     }
