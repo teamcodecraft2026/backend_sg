@@ -114,6 +114,8 @@ Deno.serve(async (req) => {
         reason_code: app.reason_code,
         reason_message,
         decided_at: app.decided_at,
+        manual_reason: app.source === "manual" ? app.manual_reason : null,
+        manual_income: app.source === "manual" ? app.manual_income : null,
       }),
       {
         status: 200,
