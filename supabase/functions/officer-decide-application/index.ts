@@ -9,12 +9,8 @@
 //   manual_gender?: "Male" | "Female",  // required for manual-review applications
 //   manual_income?: number,              // required for manual-review applications
 //   manual_reason?: string,              // required for manual-review applications
+//   override_reason?: string,            // required when denying an auto_match eligible application
 // }
-//
-// Server-side enforced rule:
-//   - if source === "auto_match" and the system's own computed eligibility
-//     was false, "approve" is rejected — only "deny" is allowed. This can't
-//     be bypassed from the client.
 //
 // Deploy: supabase functions deploy officer-decide-application
 
@@ -41,6 +37,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
+
+const VALID_OVERRIDE_REASONS = [
+  "OVERRIDE_DOC_MISMATCH",
+  "OVERRIDE_DUPLICATE",
+  "OVERRIDE_FRAUD",
+  "OVERRIDE_OTHER",
+];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -93,6 +96,12 @@ Deno.serve(async (req) => {
       body.manual_income != null ? Number(body.manual_income) : null;
     const manual_reason = body.manual_reason
       ? String(body.manual_reason).trim()
+      : null;
+    const override_reason = body.override_reason
+      ? String(body.override_reason).trim()
+      : null;
+    const override_reason_custom = body.override_reason_custom
+      ? String(body.override_reason_custom).trim()
       : null;
 
     if (!application_id) {
@@ -156,6 +165,42 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ---- Enforce: auto_match + system says eligible + officer denies => override_reason required ----
+    if (
+      app.source === "auto_match" &&
+      app.eligible === true &&
+      decision === "deny"
+    ) {
+      if (
+        !override_reason ||
+        !VALID_OVERRIDE_REASONS.includes(override_reason)
+      ) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "override_reason is required when denying a system-eligible application. Must be one of: " +
+              VALID_OVERRIDE_REASONS.join(", "),
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (override_reason === "OVERRIDE_OTHER" && !override_reason_custom) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "override_reason_custom is required when override_reason is OVERRIDE_OTHER",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
+
     // ---- Manual-review applications: require gender + income + reason ----
     if (app.source === "manual") {
       if (!manual_gender || !["Male", "Female"].includes(manual_gender)) {
@@ -207,6 +252,17 @@ Deno.serve(async (req) => {
       updatePayload.manual_gender = manual_gender;
       updatePayload.manual_income = manual_income;
       updatePayload.manual_reason = manual_reason;
+    }
+    // Store override reason when officer denies a system-eligible auto_match app
+    if (
+      app.source === "auto_match" &&
+      app.eligible === true &&
+      decision === "deny"
+    ) {
+      updatePayload.override_reason =
+        override_reason === "OVERRIDE_OTHER"
+          ? override_reason_custom
+          : override_reason;
     }
 
     const { data: updated, error: updateError } = await supabase

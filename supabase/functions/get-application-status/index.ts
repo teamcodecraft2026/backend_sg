@@ -1,8 +1,6 @@
 // supabase/functions/get-application-status/index.ts
 //
 // Citizen-facing. Given an application_id, returns its status.
-// Full eligibility breakdown is only included once status is
-// "eligible" or "not_eligible" (i.e. an officer has decided).
 //
 // GET /get-application-status?application_id=...
 //
@@ -76,7 +74,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Still pending — don't leak the officer's working data
+    // Still pending
     if (app.status === "submitted") {
       return new Response(
         JSON.stringify({
@@ -92,13 +90,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Decided — return the final verdict (using manual values if this was a
-    // manual-review application, else the auto-computed ones)
+    // Decided
     const eligible = app.status === "eligible";
     const annual_income =
       app.source === "manual" ? app.manual_income : app.annual_income;
     const reason_message =
       app.source === "manual" ? app.manual_reason : app.reason_message;
+
+    // Determine if this was an officer override (eligible system decision but officer denied)
+    const is_officer_override =
+      app.source === "auto_match" &&
+      app.eligible === true &&
+      app.status === "not_eligible";
 
     return new Response(
       JSON.stringify({
@@ -116,6 +119,8 @@ Deno.serve(async (req) => {
         decided_at: app.decided_at,
         manual_reason: app.source === "manual" ? app.manual_reason : null,
         manual_income: app.source === "manual" ? app.manual_income : null,
+        is_officer_override,
+        override_reason: is_officer_override ? app.override_reason : null,
       }),
       {
         status: 200,
