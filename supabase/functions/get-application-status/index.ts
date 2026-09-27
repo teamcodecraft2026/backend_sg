@@ -121,6 +121,8 @@ Deno.serve(async (req) => {
         manual_income: app.source === "manual" ? app.manual_income : null,
         is_officer_override,
         override_reason: is_officer_override ? app.override_reason : null,
+        card_number: eligible ? app.card_number : null,
+        full_name: eligible ? app.full_name : null,
       }),
       {
         status: 200,

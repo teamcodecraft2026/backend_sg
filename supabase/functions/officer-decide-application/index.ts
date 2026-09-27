@@ -243,10 +243,17 @@ Deno.serve(async (req) => {
 
     const newStatus = decision === "approve" ? "eligible" : "not_eligible";
 
+    // Generate a unique 10-digit card number on approval
+    const card_number =
+      decision === "approve"
+        ? String(Math.floor(1000000000 + Math.random() * 9000000000))
+        : null;
+
     const updatePayload: Record<string, unknown> = {
       status: newStatus,
       decided_by: officer_id,
       decided_at: new Date().toISOString(),
+      ...(card_number ? { card_number } : {}),
     };
     if (app.source === "manual") {
       updatePayload.manual_gender = manual_gender;
