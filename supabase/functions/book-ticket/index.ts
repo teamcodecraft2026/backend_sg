@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
     const user_id = payload.sub as string;
 
     // ---- 2. Get trip_id from request ----
-    const { trip_id } = await req.json();
+    const { trip_id, fare: client_fare } = await req.json();
 
     const uuidPattern =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -89,14 +89,14 @@ Deno.serve(async (req) => {
     // ---- 4. Check latest Pink Card eligibility for this user ----
     const { data: latestApp } = await supabase
       .from("pink_card_applications")
-      .select("eligible")
+      .select("eligible, status")
       .eq("user_id", user_id)
       .order("checked_at", { ascending: false })
       .limit(1)
       .single();
 
     const isEligible = latestApp?.status === "eligible";
-    const fare_charged = isEligible ? 0 : base_fare;
+    const fare_charged = isEligible ? 0 : (client_fare ?? base_fare);
 
     // ---- 5. MOCKED PAYMENT STEP ----
     // In production this would call Razorpay/PhonePe and wait for a webhook.
