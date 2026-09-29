@@ -135,15 +135,12 @@ Deno.serve(async (req) => {
     const revenue_by_route = Object.values(routeMap);
 
     // ---- 5. Estimated operating cost (based on trips run in range) ----
-    let tripQuery = supabase.from("trips").select("id, departure_time");
-    if (dateFrom) tripQuery = tripQuery.gte("departure_time", dateFrom);
-    // only trips that have already departed cost money; skip future scheduled ones
-    tripQuery = tripQuery.lte("departure_time", new Date().toISOString());
-
-    const { data: trips, error: tripError } = await tripQuery;
-    if (tripError) throw tripError;
-
-    const trip_count = trips?.length ?? 0;
+    // Only trips with at least one ticket in this range count (empty trips are ignored)
+    const tripIds = new Set<string>();
+    for (const t of tickets ?? []) {
+      if (t.trip_id) tripIds.add(String(t.trip_id));
+    }
+    const trip_count = tripIds.size;
     const estimated_cost = trip_count * ESTIMATED_COST_PER_TRIP;
 
     // ---- 6. Return ----
