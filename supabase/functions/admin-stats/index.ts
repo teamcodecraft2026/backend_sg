@@ -23,8 +23,16 @@ const ESTIMATED_COST_PER_TRIP = 800;
 function getDateFrom(range: string): string | null {
   const now = new Date();
   if (range === "today") {
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return start.toISOString();
+    // "today" must start at midnight IST (UTC+5:30), not midnight UTC
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const istNow = new Date(now.getTime() + IST_OFFSET_MS);
+    const startMs =
+      Date.UTC(
+        istNow.getUTCFullYear(),
+        istNow.getUTCMonth(),
+        istNow.getUTCDate(),
+      ) - IST_OFFSET_MS;
+    return new Date(startMs).toISOString();
   }
   if (range === "week") {
     const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -129,6 +137,8 @@ Deno.serve(async (req) => {
     // ---- 5. Estimated operating cost (based on trips run in range) ----
     let tripQuery = supabase.from("trips").select("id, departure_time");
     if (dateFrom) tripQuery = tripQuery.gte("departure_time", dateFrom);
+    // only trips that have already departed cost money; skip future scheduled ones
+    tripQuery = tripQuery.lte("departure_time", new Date().toISOString());
 
     const { data: trips, error: tripError } = await tripQuery;
     if (tripError) throw tripError;
